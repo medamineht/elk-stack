@@ -1,0 +1,173 @@
+version: "3.3"
+
+services:
+  webserver1:
+    build: 
+      context: ./bin/webserver
+    container_name: 'webserver1'
+    hostname: lamp_web1
+    restart: 'always'
+    ports:
+      - "${HOST_MACHINE_UNSECURE_HOST_PORT1}:80"
+      - "${HOST_MACHINE_SECURE_HOST_PORT1}:443"
+    links: 
+      - mysql
+    volumes: 
+      - ./www1:/var/www/html
+      - ${PHP_INI-./config/php/php.ini}:/usr/local/etc/php/php.ini
+      #- ${VHOSTS_DIR-./config/vhosts}:/etc/apache2/sites-enabled
+      - ${LOG_DIR-./logs/apache2}:/var/log/apache2
+    networks:
+      - elk
+  webserver2:
+    build: 
+      context: ./bin/webserver
+    container_name: 'webserver2'
+    hostname: lamp_web2
+    restart: 'always'
+    ports:
+      - "${HOST_MACHINE_UNSECURE_HOST_PORT2}:80"
+      - "${HOST_MACHINE_SECURE_HOST_PORT2}:443"
+    links: 
+      - mysql
+    volumes: 
+      - ./www2:/var/www/html
+      - ${PHP_INI-./config/php/php.ini}:/usr/local/etc/php/php.ini
+      #- ${VHOSTS_DIR-./config/vhosts}:/etc/apache2/sites-enabled
+      - ${LOG_DIR-./logs/apache2}:/var/log/apache2
+    networks:
+      - elk
+  webserver3:
+    build: 
+      context: ./bin/webserver
+    container_name: 'webserver3'
+    hostname: lamp_web3
+    restart: 'always'
+    ports:
+      - "${HOST_MACHINE_UNSECURE_HOST_PORT3}:80"
+      - "${HOST_MACHINE_SECURE_HOST_PORT3}:443"
+    links: 
+      - mysql
+    volumes: 
+      - ./www3:/var/www/html
+      - ${PHP_INI-./config/php/php.ini}:/usr/local/etc/php/php.ini
+      #- ${VHOSTS_DIR-./config/vhosts}:/etc/apache2/sites-enabled
+      - ${LOG_DIR-./logs/apache2}:/var/log/apache2
+    networks:
+      - elk
+  mysql:
+    build:
+      context: "./bin/${DATABASE}"
+    container_name: 'mysql'
+    restart: 'always'
+    ports:
+      - "${HOST_MACHINE_MYSQL_PORT}:3306"
+    volumes: 
+      - ${MYSQL_DATA_DIR-./data/mysql}:/var/lib/mysql
+      - ${MYSQL_LOG_DIR-./logs/mysql}:/var/log/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    networks:
+      - elk
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: 'sc-phpmyadmin'
+    links:
+      - mysql
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: ${MYSQL_USER}
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - '8080:80'
+    volumes: 
+      - /sessions
+    networks:
+      - elk
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.5.1
+    hostname: elasticsearch
+    volumes:
+      - type: bind
+        source: ./elasticsearch/config/elasticsearch.yml
+        target: /usr/share/elasticsearch/config/elasticsearch.yml
+        read_only: true
+      - type: volume
+        source: elasticsearch
+        target: /usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      ES_JAVA_OPTS: "-Xmx256m -Xms256m"
+      ELASTIC_PASSWORD: changeme
+      # Use single node discovery in order to disable production mode and avoid bootstrap checks
+      # see https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
+      discovery.type: single-node
+    networks:
+      - elk
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.5.1
+    hostname: logstash
+    volumes:
+      - type: bind
+        source: ./logstash/config/logstash.yml
+        target: /usr/share/logstash/config/logstash.yml
+        read_only: true
+      - type: bind
+        source: ./logstash/pipeline
+        target: /usr/share/logstash/pipeline
+        read_only: true
+    ports:
+      - "5000:5000"
+      - "9600:9600"
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.5.1
+    hostname: kibana
+    volumes:
+      - type: bind
+        source: ./kibana/config/kibana.yml
+        target: /usr/share/kibana/config/kibana.yml
+        read_only: true
+    ports:
+      - "5601:5601"
+    networks:
+      - elk
+    depends_on:
+      - elasticsearch
+  # apm-server:
+  #   image: docker.elastic.co/apm/apm-server:7.5.1
+  #   ports:
+  #     - 8200:8200
+  #   depends_on:
+  #     - elasticsearch
+  #   networks:
+  #     - elk
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./data:/var/lib/grafana
+  #   user: "0"
+  #   restart: always
+  #   networks:
+  #     - elk
+networks:
+  elk:
+    driver: bridge
+volumes:
+  elasticsearch:
